@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<ruleset name="QR Document Verification">
+	<description>WordPress Coding Standards for the plugin code. Bundled third-party JavaScript is not checked.</description>
+
+	<file>./qr-document-verification</file>
+	<arg name="extensions" value="php"/>
+	<arg name="colors"/>
+	<arg value="ps"/>
+
+	<exclude-pattern>*/assets/*</exclude-pattern>
+	<exclude-pattern>*/vendor/*</exclude-pattern>
+
+	<rule ref="WordPress"/>
+
+	<config name="minimum_supported_wp_version" value="5.5"/>
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<property name="text_domain" type="array">
+				<element value="qr-document-verification"/>
+			</property>
+		</properties>
+	</rule>
+</ruleset>
