@@ -299,16 +299,31 @@ class QDV_Admin {
 	}
 
 	public static function bulk_page() {
-		if ( ! current_user_can( 'edit_posts' ) ) {
+		if ( ! self::can_import() ) {
 			wp_die( esc_html__( 'Permission denied.', 'qr-document-verification' ) );
 		}
 
-		$report = array();
+		$report  = array();
+		$preview = null;
 		$action = isset( $_POST['qdv_action'] ) ? sanitize_key( wp_unslash( $_POST['qdv_action'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce is verified below before any processing.
 
 		// Step 1: create entries from CSV.
 		if ( 'create' === $action && check_admin_referer( 'qdv_bulk', 'qdv_bulk_nonce' ) ) {
 			$report = self::handle_csv_create();
+		}
+
+		// Step 1 (CSV file): validate an uploaded file and show a preview, nothing is created yet.
+		if ( 'csv_preview' === $action && check_admin_referer( 'qdv_bulk', 'qdv_bulk_nonce' ) ) {
+			$preview = self::handle_csv_preview();
+			if ( ! empty( $preview['error'] ) ) {
+				$report  = array( $preview['error'] );
+				$preview = null;
+			}
+		}
+
+		// Step 1 (CSV file): the user confirmed the preview.
+		if ( 'csv_confirm' === $action && check_admin_referer( 'qdv_bulk', 'qdv_bulk_nonce' ) ) {
+			$report = self::handle_csv_confirm();
 		}
 
 		// Step 2: attach PDFs by matching filename to ID number.
@@ -328,10 +343,24 @@ class QDV_Admin {
 				</ul></div>
 			<?php endif; ?>
 
+			<?php if ( $preview ) : ?>
+				<?php self::render_csv_preview( $preview ); ?>
+			<?php endif; ?>
+
 			<div style="display:flex;gap:24px;flex-wrap:wrap;max-width:1100px">
 
 				<div class="card" style="flex:1;min-width:340px;padding:16px">
 					<h2><?php esc_html_e( 'Step 1 · Create entries (Name + ID number)', 'qr-document-verification' ); ?></h2>
+					<h3><?php esc_html_e( 'From a CSV file', 'qr-document-verification' ); ?></h3>
+					<p class="description"><?php esc_html_e( 'Upload a .csv file with two columns: Name and ID number (a header row is optional). You will see a preview with any problems before anything is created.', 'qr-document-verification' ); ?></p>
+					<form method="post" enctype="multipart/form-data">
+						<?php wp_nonce_field( 'qdv_bulk', 'qdv_bulk_nonce' ); ?>
+						<input type="hidden" name="qdv_action" value="csv_preview">
+						<p><input type="file" name="qdv_csv_file" accept=".csv,.txt,text/csv,text/plain" required></p>
+						<p><?php submit_button( __( 'Upload & Preview', 'qr-document-verification' ), 'secondary', 'submit', false ); ?></p>
+					</form>
+					<hr>
+					<h3><?php esc_html_e( 'Or paste a list', 'qr-document-verification' ); ?></h3>
 					<p class="description"><?php esc_html_e( 'One entry per line as: Name , ID number. A header row "name,id" is skipped automatically. Each entry gets a secret link + QR you can download from the list.', 'qr-document-verification' ); ?></p>
 					<form method="post">
 						<?php wp_nonce_field( 'qdv_bulk', 'qdv_bulk_nonce' ); ?>
@@ -355,6 +384,206 @@ class QDV_Admin {
 			</div>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Whether the current user may bulk create entries.
+	 */
+	public static function can_import() {
+		$type = get_post_type_object( QDV_POST_TYPE );
+		$cap  = ( $type && ! empty( $type->cap->create_posts ) ) ? $type->cap->create_posts : 'edit_posts';
+		return current_user_can( 'edit_posts' ) && current_user_can( $cap );
+	}
+
+	/**
+	 * Create one published entry with a token. Returns the post ID or WP_Error.
+	 */
+	private static function create_entry( $name, $idn ) {
+		$post_id = wp_insert_post( array(
+			'post_type'   => QDV_POST_TYPE,
+			'post_status' => 'publish',
+			'post_title'  => $name,
+		), true );
+		if ( is_wp_error( $post_id ) ) {
+			return $post_id;
+		}
+		update_post_meta( $post_id, '_qdv_id_number', $idn );
+		QDV_CPT::ensure_token( $post_id );
+		return $post_id;
+	}
+
+	/**
+	 * Read and validate an uploaded CSV, keep the valid rows for 15 minutes and
+	 * return what the preview needs. Creates nothing.
+	 */
+	private static function handle_csv_preview() {
+		if ( ! self::can_import() ) {
+			return array( 'error' => __( 'Permission denied.', 'qr-document-verification' ) );
+		}
+		$file = isset( $_FILES['qdv_csv_file'] ) ? self::clean_file( wp_unslash( $_FILES['qdv_csv_file'] ) ) : null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Sanitized in clean_file(); nonce checked by the caller.
+		if ( ! $file || '' === $file['name'] || UPLOAD_ERR_OK !== $file['error'] ) {
+			return array( 'error' => __( 'Please choose a CSV file to upload.', 'qr-document-verification' ) );
+		}
+		$ext = strtolower( pathinfo( $file['name'], PATHINFO_EXTENSION ) );
+		if ( ! in_array( $ext, array( 'csv', 'txt' ), true ) ) {
+			return array( 'error' => __( 'Only .csv files are accepted.', 'qr-document-verification' ) );
+		}
+		if ( $file['size'] <= 0 || $file['size'] > 1024 * 1024 ) {
+			return array( 'error' => __( 'The CSV file must be between 1 byte and 1 MB.', 'qr-document-verification' ) );
+		}
+		if ( ! is_uploaded_file( $file['tmp_name'] ) ) {
+			return array( 'error' => __( 'The upload could not be verified.', 'qr-document-verification' ) );
+		}
+
+		$text = file_get_contents( $file['tmp_name'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a just-uploaded temp file.
+		if ( false === $text ) {
+			return array( 'error' => __( 'The CSV file could not be read.', 'qr-document-verification' ) );
+		}
+		// Spreadsheet exports from older Excel are often Windows-1252, not UTF-8.
+		if ( function_exists( 'mb_check_encoding' ) && ! mb_check_encoding( $text, 'UTF-8' ) ) {
+			$text = mb_convert_encoding( $text, 'UTF-8', 'Windows-1252' );
+		}
+
+		$parsed = QDV_CSV::parse( $text, 'sanitize_text_field' );
+		if ( empty( $parsed['rows'] ) ) {
+			return array( 'error' => __( 'No data rows were found in the CSV file.', 'qr-document-verification' ) );
+		}
+		$result = QDV_CSV::validate( $parsed['rows'], 'qdv_find_post_by_idnumber' );
+
+		$valid = array();
+		foreach ( $result['rows'] as $row ) {
+			if ( $row['valid'] ) {
+				$valid[] = array( 'name' => $row['name'], 'id' => $row['id'] );
+			}
+		}
+		$key = '';
+		if ( $valid ) {
+			$key = strtolower( wp_generate_password( 16, false, false ) );
+			set_transient( self::csv_transient_key( $key ), $valid, 15 * MINUTE_IN_SECONDS );
+		}
+
+		return array(
+			'key'        => $key,
+			'filename'   => $file['name'],
+			'result'     => $result,
+			'had_header' => $parsed['had_header'],
+			'truncated'  => $parsed['truncated'],
+		);
+	}
+
+	/**
+	 * Transient name scoped to the current user so a key cannot be replayed by someone else.
+	 */
+	private static function csv_transient_key( $key ) {
+		return 'qdv_csv_' . get_current_user_id() . '_' . sanitize_key( $key );
+	}
+
+	private static function render_csv_preview( $preview ) {
+		$result  = $preview['result'];
+		$limit   = 10;
+		$shown   = array_slice( $result['rows'], 0, $limit );
+		$invalid = array_values( array_filter( $result['rows'], function ( $r ) {
+			return ! $r['valid'];
+		} ) );
+		?>
+		<div class="card" style="max-width:1100px;padding:16px;margin-bottom:24px">
+			<h2><?php esc_html_e( 'CSV preview', 'qr-document-verification' ); ?></h2>
+			<p>
+				<?php
+				/* translators: 1: file name, 2: total rows, 3: valid rows, 4: rows with errors. */
+				echo esc_html( sprintf( __( '%1$s: %2$d rows read, %3$d valid, %4$d with errors.', 'qr-document-verification' ), $preview['filename'], count( $result['rows'] ), $result['valid'], $result['invalid'] ) );
+				?>
+			</p>
+			<?php if ( $preview['truncated'] ) : ?>
+				<p class="description"><?php echo esc_html( sprintf( /* translators: %d: row limit. */ __( 'Only the first %d rows were read. Split the file to import the rest.', 'qr-document-verification' ), QDV_CSV::MAX_ROWS ) ); ?></p>
+			<?php endif; ?>
+
+			<table class="widefat striped" style="max-width:800px">
+				<thead><tr>
+					<th><?php esc_html_e( 'Row', 'qr-document-verification' ); ?></th>
+					<th><?php esc_html_e( 'Name', 'qr-document-verification' ); ?></th>
+					<th><?php esc_html_e( 'ID number', 'qr-document-verification' ); ?></th>
+					<th><?php esc_html_e( 'Status', 'qr-document-verification' ); ?></th>
+				</tr></thead>
+				<tbody>
+				<?php foreach ( $shown as $row ) : ?>
+					<tr>
+						<td><?php echo (int) $row['line']; ?></td>
+						<td><?php echo esc_html( $row['name'] ); ?></td>
+						<td><?php echo esc_html( $row['id'] ); ?></td>
+						<td><?php echo $row['valid'] ? '<span style="color:#1a7f43">&#10003; ' . esc_html__( 'OK', 'qr-document-verification' ) . '</span>' : '<span style="color:#b32d2e">' . esc_html( implode( ' ', $row['errors'] ) ) . '</span>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Static markup, dynamic text escaped. ?></td>
+					</tr>
+				<?php endforeach; ?>
+				</tbody>
+			</table>
+			<?php if ( count( $result['rows'] ) > $limit ) : ?>
+				<p class="description"><?php echo esc_html( sprintf( /* translators: %d: number of rows shown. */ __( 'Showing the first %d rows.', 'qr-document-verification' ), $limit ) ); ?></p>
+			<?php endif; ?>
+
+			<?php if ( $invalid ) : ?>
+				<h3><?php esc_html_e( 'Rows that will be skipped', 'qr-document-verification' ); ?></h3>
+				<ul style="list-style:disc;margin-left:20px">
+				<?php foreach ( array_slice( $invalid, 0, 50 ) as $row ) : ?>
+					<li><?php echo esc_html( sprintf( /* translators: 1: row number, 2: error messages. */ __( 'Row %1$d: %2$s', 'qr-document-verification' ), $row['line'], implode( ' ', $row['errors'] ) ) ); ?></li>
+				<?php endforeach; ?>
+				<?php if ( count( $invalid ) > 50 ) : ?>
+					<li><?php echo esc_html( sprintf( /* translators: %d: number of additional rows. */ __( '...and %d more.', 'qr-document-verification' ), count( $invalid ) - 50 ) ); ?></li>
+				<?php endif; ?>
+				</ul>
+			<?php endif; ?>
+
+			<?php if ( $preview['key'] ) : ?>
+				<form method="post" style="margin-top:12px">
+					<?php wp_nonce_field( 'qdv_bulk', 'qdv_bulk_nonce' ); ?>
+					<input type="hidden" name="qdv_action" value="csv_confirm">
+					<input type="hidden" name="qdv_csv_key" value="<?php echo esc_attr( $preview['key'] ); ?>">
+					<?php submit_button( sprintf( /* translators: %d: number of valid rows. */ __( 'Create %d entries', 'qr-document-verification' ), $result['valid'] ), 'primary', 'submit', false ); ?>
+					<a class="button" href="<?php echo esc_url( admin_url( 'edit.php?post_type=' . QDV_POST_TYPE . '&page=qdv-bulk' ) ); ?>"><?php esc_html_e( 'Cancel', 'qr-document-verification' ); ?></a>
+				</form>
+			<?php else : ?>
+				<p><strong><?php esc_html_e( 'Nothing can be imported. Fix the file and upload it again.', 'qr-document-verification' ); ?></strong></p>
+			<?php endif; ?>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Create the entries held from a previewed upload. IDs are re-checked
+	 * because the data may have changed since the preview.
+	 */
+	private static function handle_csv_confirm() {
+		if ( ! self::can_import() ) {
+			return array( __( 'Permission denied.', 'qr-document-verification' ) );
+		}
+		$key  = isset( $_POST['qdv_csv_key'] ) ? sanitize_key( wp_unslash( $_POST['qdv_csv_key'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified by the caller via check_admin_referer().
+		$rows = ( '' !== $key ) ? get_transient( self::csv_transient_key( $key ) ) : false;
+		if ( ! is_array( $rows ) ) {
+			return array( __( 'The preview expired. Please upload the file again.', 'qr-document-verification' ) );
+		}
+		delete_transient( self::csv_transient_key( $key ) );
+
+		$created = 0;
+		$skipped = 0;
+		$report  = array();
+		foreach ( $rows as $row ) {
+			if ( qdv_find_post_by_idnumber( $row['id'] ) ) {
+				/* translators: %s: the duplicate ID number. */
+				$report[] = sprintf( __( 'Skipped duplicate ID number: %s', 'qr-document-verification' ), $row['id'] );
+				$skipped++;
+				continue;
+			}
+			$res = self::create_entry( $row['name'], $row['id'] );
+			if ( is_wp_error( $res ) ) {
+				/* translators: %s: the entry name. */
+				$report[] = sprintf( __( 'Failed to create: %s', 'qr-document-verification' ), $row['name'] );
+				$skipped++;
+				continue;
+			}
+			$created++;
+		}
+		/* translators: 1: number of entries created, 2: number skipped. */
+		array_unshift( $report, sprintf( __( '%1$d entries created, %2$d skipped.', 'qr-document-verification' ), $created, $skipped ) );
+		return $report;
 	}
 
 	private static function handle_csv_create() {
@@ -394,19 +623,12 @@ class QDV_Admin {
 				continue;
 			}
 
-			$post_id = wp_insert_post( array(
-				'post_type'   => QDV_POST_TYPE,
-				'post_status' => 'publish',
-				'post_title'  => $name,
-			), true );
-
+			$post_id = self::create_entry( $name, $idn );
 			if ( is_wp_error( $post_id ) ) {
 				/* translators: %s: the entry name. */
 				$report[] = sprintf( __( 'Failed to create: %s', 'qr-document-verification' ), $name );
 				continue;
 			}
-			update_post_meta( $post_id, '_qdv_id_number', $idn );
-			QDV_CPT::ensure_token( $post_id );
 			$created++;
 		}
 

@@ -12,7 +12,7 @@ Publish PDF documents (certificates, permits, letters, results, IDs) behind secr
 
 - **Secret links:** each entry uses a long random token. PDFs are stored in a web-protected folder and streamed only through that link, so nobody can reach another entry's document without its QR or link.
 - **Customisable page:** the URL slug (for example `example.com/verify/...`, language prefixes like `en/verify` are supported), header title and gradient colours, the "Verified" badge (show/hide, text, colours), the Name and ID fields (show/hide and rename, for example "Roll No" or "Permit No"), and an optional open/download link.
-- **Bulk tools:** create many entries from a pasted "Name, ID" list, and attach many PDFs at once by matching each file name to its ID.
+- **Bulk tools:** create many entries from a CSV file (with a preview and per-row validation errors before anything is created) or a pasted "Name, ID" list, and attach many PDFs at once by matching each file name to its ID.
 
 ## Installation
 

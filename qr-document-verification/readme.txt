@@ -41,7 +41,7 @@ link — so no one can reach another entry's document without its QR/link.
 The verification page renders inside your active theme (header + footer), so it
 matches the rest of your site, including page builders like Elementor.
 
-Bulk tools are included: create many entries from a pasted "Name, ID" list, and
+Bulk tools are included: create many entries from an uploaded CSV file (preview and per-row errors first) or a pasted "Name, ID" list, and
 attach many PDFs at once by matching each file name to its ID.
 
 == Installation ==
@@ -70,6 +70,9 @@ Visit Settings -> Permalinks and click Save once, or re-save the plugin settings
 to refresh permalinks.
 
 == Changelog ==
+
+= Unreleased =
+* Bulk import from an uploaded CSV file: preview of the first rows, per-row validation errors (empty fields, duplicates, existing IDs) and a confirm step before entries are created.
 
 = 1.0.0 =
 * Initial release.
