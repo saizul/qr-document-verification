@@ -23,6 +23,7 @@ define( 'QDV_DEFAULT_SLUG', 'verify' );   // default; editable in Settings -> /{
 
 require_once QDV_DIR . 'includes/helpers.php';
 require_once QDV_DIR . 'includes/class-cpt.php';
+require_once QDV_DIR . 'includes/class-csv.php';
 require_once QDV_DIR . 'includes/class-frontend.php';
 require_once QDV_DIR . 'includes/class-admin.php';
 require_once QDV_DIR . 'includes/class-settings.php';
