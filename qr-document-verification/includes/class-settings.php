@@ -123,6 +123,33 @@ class QDV_Settings {
 					</tr>
 				</table>
 
+				<h2><?php esc_html_e( 'Validity (expiry and revocation)', 'qr-document-verification' ); ?></h2>
+				<table class="form-table" role="presentation">
+					<tr>
+						<th scope="row"><?php esc_html_e( 'Expiry field', 'qr-document-verification' ); ?></th>
+						<td>
+							<label><input type="checkbox" name="show_expiry" value="1" <?php checked( $o['show_expiry'], 1 ); ?>> <?php esc_html_e( 'Show', 'qr-document-verification' ); ?></label>
+							&nbsp; <?php esc_html_e( 'Label', 'qr-document-verification' ); ?> <input type="text" name="label_expiry" value="<?php echo esc_attr( $o['label_expiry'] ); ?>" class="regular-text">
+							<p class="description"><?php esc_html_e( 'Shown on the verification page for entries that have an expiry date.', 'qr-document-verification' ); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="expired_text"><?php esc_html_e( 'Expired badge text', 'qr-document-verification' ); ?></label></th>
+						<td><input type="text" id="expired_text" name="expired_text" class="regular-text" value="<?php echo esc_attr( $o['expired_text'] ); ?>"></td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="revoked_text"><?php esc_html_e( 'Revoked badge text', 'qr-document-verification' ); ?></label></th>
+						<td><input type="text" id="revoked_text" name="revoked_text" class="regular-text" value="<?php echo esc_attr( $o['revoked_text'] ); ?>"></td>
+					</tr>
+					<tr>
+						<th scope="row"><?php esc_html_e( 'Expired documents', 'qr-document-verification' ); ?></th>
+						<td>
+							<label><input type="checkbox" name="hide_expired_pdf" value="1" <?php checked( $o['hide_expired_pdf'], 1 ); ?>> <?php esc_html_e( 'Hide the PDF of expired documents', 'qr-document-verification' ); ?></label>
+							<p class="description"><?php esc_html_e( 'The PDF of a revoked document is never served. Expired documents still show their PDF unless this is ticked.', 'qr-document-verification' ); ?></p>
+						</td>
+					</tr>
+				</table>
+
 				<h2><?php esc_html_e( 'Live preview', 'qr-document-verification' ); ?></h2>
 				<div id="qdv-prev" style="max-width:560px;border-radius:14px;overflow:hidden;border:1px solid #e6e9f2;box-shadow:0 8px 24px rgba(20,30,60,.08)">
 					<div id="qdv-prev-band" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;color:#fff">
@@ -199,6 +226,19 @@ class QDV_Settings {
 			'download_text' => sanitize_text_field( wp_unslash( $_POST['download_text'] ?? '' ) ),
 			'notfound_text' => sanitize_text_field( wp_unslash( $_POST['notfound_text'] ?? '' ) ),
 		);
+
+		$d                     = qdv_defaults();
+		$o['show_expiry']      = isset( $_POST['show_expiry'] ) ? 1 : 0;
+		$o['label_expiry']     = sanitize_text_field( wp_unslash( $_POST['label_expiry'] ?? '' ) );
+		$o['expired_text']     = sanitize_text_field( wp_unslash( $_POST['expired_text'] ?? '' ) );
+		$o['revoked_text']     = sanitize_text_field( wp_unslash( $_POST['revoked_text'] ?? '' ) );
+		$o['hide_expired_pdf'] = isset( $_POST['hide_expired_pdf'] ) ? 1 : 0;
+		// A blank status text would leave a revoked / expired page without a visible state.
+		foreach ( array( 'label_expiry', 'expired_text', 'revoked_text' ) as $key ) {
+			if ( '' === $o[ $key ] ) {
+				$o[ $key ] = $d[ $key ];
+			}
+		}
 		update_option( 'qdv_options', $o );
 	}
 }

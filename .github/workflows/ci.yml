@@ -30,8 +30,8 @@ jobs:
           done < <(find . -name '*.php' -not -path './.git/*' -not -path './vendor/*' -print0)
           exit $status
 
-  csv-tests:
-    name: CSV importer tests (PHP ${{ matrix.php }})
+  unit-tests:
+    name: Unit tests (PHP ${{ matrix.php }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -44,6 +44,7 @@ jobs:
           php-version: ${{ matrix.php }}
           coverage: none
       - run: php tests/csv-test.php
+      - run: php tests/status-test.php
 
   phpcs:
     name: WordPress Coding Standards (informational)

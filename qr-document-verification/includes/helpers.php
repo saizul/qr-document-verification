@@ -109,3 +109,66 @@ function qdv_find_post_by_idnumber( $id_number ) {
 
 	return $q->have_posts() ? (int) $q->posts[0] : 0;
 }
+
+/**
+ * Validity status of an entry (valid / expired / revoked).
+ *
+ * @param int $post_id Entry ID.
+ * @return array See QDV_Status::evaluate().
+ */
+function qdv_entry_status( $post_id ) {
+	return QDV_Status::evaluate(
+		array(
+			'expires'    => get_post_meta( $post_id, QDV_Status::META_EXPIRES, true ),
+			'revoked'    => get_post_meta( $post_id, QDV_Status::META_REVOKED, true ),
+			'revoked_at' => get_post_meta( $post_id, QDV_Status::META_REVOKED_AT, true ),
+			'reason'     => get_post_meta( $post_id, QDV_Status::META_REVOKE_REASON, true ),
+		),
+		qdv_today()
+	);
+}
+
+/**
+ * Today's date (Y-m-d) in the site timezone.
+ */
+function qdv_today() {
+	return function_exists( 'wp_date' ) ? wp_date( 'Y-m-d' ) : current_time( 'Y-m-d' );
+}
+
+/**
+ * Format a stored Y-m-d date with the site's date format. '' stays ''.
+ *
+ * @param string $ymd Date in Y-m-d form.
+ */
+function qdv_format_date( $ymd ) {
+	$ymd = QDV_Status::sanitize_date( $ymd );
+	if ( '' === $ymd ) {
+		return '';
+	}
+	// Noon UTC keeps the calendar day stable whatever the site timezone is.
+	$ts = strtotime( $ymd . ' 12:00:00 UTC' );
+	return function_exists( 'wp_date' ) ? wp_date( get_option( 'date_format' ), $ts, new DateTimeZone( 'UTC' ) ) : date_i18n( get_option( 'date_format' ), $ts );
+}
+
+/**
+ * Revoke an entry, or reinstate it when $revoked is false.
+ *
+ * @param int    $post_id Entry ID.
+ * @param bool   $revoked Revoke (true) or reinstate (false).
+ * @param string $reason  Optional public reason, only used when revoking.
+ */
+function qdv_set_revoked( $post_id, $revoked, $reason = null ) {
+	if ( $revoked ) {
+		if ( ! get_post_meta( $post_id, QDV_Status::META_REVOKED, true ) ) {
+			update_post_meta( $post_id, QDV_Status::META_REVOKED, 1 );
+			update_post_meta( $post_id, QDV_Status::META_REVOKED_AT, qdv_today() );
+		}
+		if ( null !== $reason ) {
+			update_post_meta( $post_id, QDV_Status::META_REVOKE_REASON, QDV_Status::sanitize_reason( sanitize_text_field( $reason ) ) );
+		}
+		return;
+	}
+	delete_post_meta( $post_id, QDV_Status::META_REVOKED );
+	delete_post_meta( $post_id, QDV_Status::META_REVOKED_AT );
+	delete_post_meta( $post_id, QDV_Status::META_REVOKE_REASON );
+}

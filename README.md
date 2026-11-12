@@ -12,6 +12,7 @@ Publish PDF documents (certificates, permits, letters, results, IDs) behind secr
 
 - **Secret links:** each entry uses a long random token. PDFs are stored in a web-protected folder and streamed only through that link, so nobody can reach another entry's document without its QR or link.
 - **Customisable page:** the URL slug (for example `example.com/verify/...`, language prefixes like `en/verify` are supported), header title and gradient colours, the "Verified" badge (show/hide, text, colours), the Name and ID fields (show/hide and rename, for example "Roll No" or "Permit No"), and an optional open/download link.
+- **Expiry and revocation:** give an entry an optional expiry date (valid up to and including that day) or revoke it, with an optional public reason. The link and QR keep working, but the page shows an "Expired" or "Revoked" state instead of "Verified". A revoked entry's PDF is never served (the PDF URL answers `410 Gone`); an expired entry's PDF is shown unless you tick **Hide the PDF of expired documents**. The entry list has a Status column and **Revoke** / **Reinstate** bulk actions.
 - **Bulk tools:** create many entries from a CSV file (with a preview and per-row validation errors before anything is created) or a pasted "Name, ID" list, and attach many PDFs at once by matching each file name to its ID.
 
 ## Installation
@@ -28,6 +29,8 @@ Requirements from `readme.txt`: WordPress 5.5 or newer (tested up to 7.0), PHP 7
 2. Place the QR into your PDF design (certificate, permit, letter, ...), then upload the finished PDF to the same entry.
 3. Anyone who scans the QR lands on the verification page showing the document and the holder's details.
 
+To withdraw a document, tick **Revoke this document** on the entry (or select entries in the list and choose **Revoke** under Bulk actions). Untick it, or use **Reinstate**, to make it valid again. Set an **Expiry date** for documents that are only valid for a limited time; the badge and label texts for these states are under **Settings -> Validity**.
+
 For many documents at once, use the bulk tools to create entries from a "Name, ID" list and to attach PDFs whose file names match the IDs.
 
 ## Development
@@ -35,6 +38,7 @@ For many documents at once, use the bulk tools to create entries from a "Name, I
 CI runs on every push and pull request (`.github/workflows/ci.yml`):
 
 - `php -l` on every PHP file with PHP 8.1, 8.2 and 8.3.
+- Dependency-free unit tests: `php tests/csv-test.php` (CSV importer) and `php tests/status-test.php` (expiry / revocation rules).
 - PHP_CodeSniffer with the WordPress Coding Standards (`phpcs.xml.dist`). This job is allowed to fail: it exists to give visibility into style findings and does not block merging.
 
 To lint locally:

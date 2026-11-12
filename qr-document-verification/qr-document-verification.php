@@ -24,6 +24,7 @@ define( 'QDV_DEFAULT_SLUG', 'verify' );   // default; editable in Settings -> /{
 require_once QDV_DIR . 'includes/helpers.php';
 require_once QDV_DIR . 'includes/class-cpt.php';
 require_once QDV_DIR . 'includes/class-csv.php';
+require_once QDV_DIR . 'includes/class-status.php';
 require_once QDV_DIR . 'includes/class-frontend.php';
 require_once QDV_DIR . 'includes/class-admin.php';
 require_once QDV_DIR . 'includes/class-settings.php';
@@ -33,21 +34,27 @@ require_once QDV_DIR . 'includes/class-settings.php';
  */
 function qdv_defaults() {
 	return array(
-		'header_title'  => 'Document Verification',
-		'header_bg'     => '#242a7d',
-		'header_bg2'    => '#1a1f66',
-		'header_color'  => '#ffffff',
-		'show_badge'    => 1,
-		'badge_text'    => 'Verified',
-		'badge_bg'      => '#e9f9ef',
-		'badge_color'   => '#137a3e',
-		'show_name'     => 1,
-		'label_name'    => 'Name',
-		'show_id'       => 1,
-		'label_id'      => 'ID Number',
-		'show_download' => 1,
-		'download_text' => 'Open / Download PDF',
-		'notfound_text' => 'Verification not found',
+		'header_title'     => 'Document Verification',
+		'header_bg'        => '#242a7d',
+		'header_bg2'       => '#1a1f66',
+		'header_color'     => '#ffffff',
+		'show_badge'       => 1,
+		'badge_text'       => 'Verified',
+		'badge_bg'         => '#e9f9ef',
+		'badge_color'      => '#137a3e',
+		'show_name'        => 1,
+		'label_name'       => 'Name',
+		'show_id'          => 1,
+		'label_id'         => 'ID Number',
+		'show_download'    => 1,
+		'download_text'    => 'Open / Download PDF',
+		'notfound_text'    => 'Verification not found',
+		// Validity (expiry / revocation).
+		'show_expiry'      => 1,
+		'label_expiry'     => 'Valid Until',
+		'expired_text'     => 'Expired',
+		'revoked_text'     => 'Revoked',
+		'hide_expired_pdf' => 0,
 	);
 }
 
