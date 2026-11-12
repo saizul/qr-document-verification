@@ -27,6 +27,9 @@ is hard-coded:
 * Fields — show/hide the Name and ID fields and rename their labels to anything
   (e.g. "Roll No", "Permit No", "Certificate ID").
 * Document — optional open/download link and its text.
+* Validity — optional expiry date per entry and one-click revocation (single
+  or bulk). Expired and revoked documents show a clear "Expired" / "Revoked"
+  state instead of "Verified"; revoked PDFs are no longer served.
 
 How it works (two steps):
 
@@ -65,6 +68,11 @@ Yes. Both labels are fully editable in Settings and also apply to the admin scre
 Yes. The verification page is a real page rendered inside your theme, so your
 header and footer appear normally.
 
+= Can I withdraw a certificate that was issued by mistake? =
+Yes. Tick "Revoke this document" on the entry (or use the Revoke bulk action).
+The QR keeps working but now shows "Revoked", optionally with your reason, and
+the PDF is no longer served. Untick it to reinstate the document.
+
 = The link shows "not found" right after install. =
 Visit Settings -> Permalinks and click Save once, or re-save the plugin settings,
 to refresh permalinks.
@@ -72,6 +80,7 @@ to refresh permalinks.
 == Changelog ==
 
 = Unreleased =
+* Document expiry and revocation: optional expiry date per entry (inclusive), revoke / reinstate with an optional public reason, "Expired" / "Revoked" states on the verification page, revoked PDFs answer 410 Gone, a Status column and Revoke / Reinstate bulk actions, plus settings for the texts and for hiding expired PDFs.
 * Bulk import from an uploaded CSV file: preview of the first rows, per-row validation errors (empty fields, duplicates, existing IDs) and a confirm step before entries are created.
 
 = 1.0.0 =

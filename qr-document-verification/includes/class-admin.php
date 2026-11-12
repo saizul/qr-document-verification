@@ -23,6 +23,10 @@ class QDV_Admin {
 		add_action( 'admin_menu', array( __CLASS__, 'menu' ) );
 		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'assets' ) );
 		add_action( 'admin_notices', array( __CLASS__, 'notices' ) );
+
+		// Revoke / reinstate several entries at once from the list table.
+		add_filter( 'bulk_actions-edit-' . QDV_POST_TYPE, array( __CLASS__, 'register_bulk_actions' ) );
+		add_filter( 'handle_bulk_actions-edit-' . QDV_POST_TYPE, array( __CLASS__, 'handle_bulk_actions' ), 10, 3 );
 	}
 
 	public static function disable_block_editor( $use, $post_type ) {
@@ -99,6 +103,7 @@ class QDV_Admin {
 					<?php endif; ?>
 				</td>
 			</tr>
+			<?php self::validity_rows( $post ); ?>
 			<?php if ( $token ) :
 				$url = qdv_verify_url( $token );
 				?>
@@ -128,6 +133,37 @@ class QDV_Admin {
 		<?php
 	}
 
+	/**
+	 * Meta box rows for the expiry date and revocation.
+	 *
+	 * @param WP_Post $post Entry being edited.
+	 */
+	private static function validity_rows( $post ) {
+		$state = qdv_entry_status( $post->ID );
+		?>
+		<tr>
+			<th><label for="qdv_expires"><?php esc_html_e( 'Expiry date', 'qr-document-verification' ); ?></label></th>
+			<td>
+				<input type="date" id="qdv_expires" name="qdv_expires" value="<?php echo esc_attr( $state['expires'] ); ?>">
+				<p class="description"><?php esc_html_e( 'Optional. The document is valid up to and including this day; afterwards the verification page shows it as expired. Leave empty for no expiry.', 'qr-document-verification' ); ?></p>
+			</td>
+		</tr>
+		<tr>
+			<th><?php esc_html_e( 'Revocation', 'qr-document-verification' ); ?></th>
+			<td>
+				<input type="hidden" name="qdv_validity_present" value="1">
+				<label><input type="checkbox" id="qdv_revoked" name="qdv_revoked" value="1" <?php checked( QDV_Status::REVOKED, $state['status'] ); ?>> <?php esc_html_e( 'Revoke this document', 'qr-document-verification' ); ?></label>
+				<?php if ( '' !== $state['revoked_at'] ) : ?>
+					<?php /* translators: %s: the revocation date. */ ?>
+					<span class="description">&mdash; <?php echo esc_html( sprintf( __( 'revoked on %s', 'qr-document-verification' ), qdv_format_date( $state['revoked_at'] ) ) ); ?></span>
+				<?php endif; ?>
+				<p><input type="text" id="qdv_revoke_reason" name="qdv_revoke_reason" class="large-text" maxlength="<?php echo (int) QDV_Status::MAX_REASON_LENGTH; ?>" value="<?php echo esc_attr( $state['reason'] ); ?>" placeholder="<?php esc_attr_e( 'Reason (optional, shown publicly)', 'qr-document-verification' ); ?>"></p>
+				<p class="description"><?php esc_html_e( 'A revoked document keeps its link and QR code, but the verification page shows "Revoked" and the PDF is no longer served. Untick to reinstate it.', 'qr-document-verification' ); ?></p>
+			</td>
+		</tr>
+		<?php
+	}
+
 	/* ----------------------------------------------------------------------
 	 * Save
 	 * -------------------------------------------------------------------- */
@@ -147,6 +183,20 @@ class QDV_Admin {
 
 		if ( isset( $_POST['qdv_id_number'] ) ) {
 			update_post_meta( $post_id, '_qdv_id_number', sanitize_text_field( wp_unslash( $_POST['qdv_id_number'] ) ) );
+		}
+
+		// Expiry date and revocation.
+		if ( isset( $_POST['qdv_expires'] ) ) {
+			$expires = QDV_Status::sanitize_date( sanitize_text_field( wp_unslash( $_POST['qdv_expires'] ) ) );
+			if ( '' === $expires ) {
+				delete_post_meta( $post_id, QDV_Status::META_EXPIRES );
+			} else {
+				update_post_meta( $post_id, QDV_Status::META_EXPIRES, $expires );
+			}
+		}
+		if ( isset( $_POST['qdv_validity_present'] ) ) {
+			$reason = isset( $_POST['qdv_revoke_reason'] ) ? sanitize_text_field( wp_unslash( $_POST['qdv_revoke_reason'] ) ) : '';
+			qdv_set_revoked( $post_id, ! empty( $_POST['qdv_revoked'] ), $reason );
 		}
 
 		// Always guarantee a token exists.
@@ -236,15 +286,16 @@ class QDV_Admin {
 	 * List table columns
 	 * -------------------------------------------------------------------- */
 	public static function columns( $cols ) {
-		$new = array();
-		$new['cb']    = isset( $cols['cb'] ) ? $cols['cb'] : '';
-		$new['title'] = __( 'Name', 'qr-document-verification' );
-		$opts            = qdv_get_options();
-		$new['qdv_id']   = $opts['label_id'];
-		$new['qdv_pdf']  = __( 'PDF', 'qr-document-verification' );
-		$new['qdv_link'] = __( 'Verification Link', 'qr-document-verification' );
-		$new['qdv_qr']   = __( 'QR', 'qr-document-verification' );
-		$new['date']  = isset( $cols['date'] ) ? $cols['date'] : __( 'Date', 'qr-document-verification' );
+		$new               = array();
+		$new['cb']         = isset( $cols['cb'] ) ? $cols['cb'] : '';
+		$new['title']      = __( 'Name', 'qr-document-verification' );
+		$opts              = qdv_get_options();
+		$new['qdv_id']     = $opts['label_id'];
+		$new['qdv_pdf']    = __( 'PDF', 'qr-document-verification' );
+		$new['qdv_status'] = __( 'Status', 'qr-document-verification' );
+		$new['qdv_link']   = __( 'Verification Link', 'qr-document-verification' );
+		$new['qdv_qr']     = __( 'QR', 'qr-document-verification' );
+		$new['date']       = isset( $cols['date'] ) ? $cols['date'] : __( 'Date', 'qr-document-verification' );
 		return $new;
 	}
 
@@ -261,6 +312,10 @@ class QDV_Admin {
 				} else {
 					echo '<span style="color:#b26a00;font-weight:600">&#9679; ' . esc_html__( 'Pending', 'qr-document-verification' ) . '</span>';
 				}
+				break;
+
+			case 'qdv_status':
+				self::status_column( $post_id );
 				break;
 
 			case 'qdv_link':
@@ -282,6 +337,82 @@ class QDV_Admin {
 				}
 				break;
 		}
+	}
+
+	/**
+	 * Status cell: Valid / Expires soon / Expired / Revoked.
+	 *
+	 * @param int $post_id Entry ID.
+	 */
+	private static function status_column( $post_id ) {
+		$state   = qdv_entry_status( $post_id );
+		$expires = qdv_format_date( $state['expires'] );
+		switch ( $state['status'] ) {
+			case QDV_Status::REVOKED:
+				echo '<span class="qdv-st qdv-st-revoked">&#10007; ' . esc_html__( 'Revoked', 'qr-document-verification' ) . '</span>';
+				break;
+			case QDV_Status::EXPIRED:
+				echo '<span class="qdv-st qdv-st-expired">&#9679; ' . esc_html__( 'Expired', 'qr-document-verification' ) . '</span>';
+				break;
+			default:
+				echo '<span class="qdv-st qdv-st-valid">&#10003; ' . esc_html__( 'Valid', 'qr-document-verification' ) . '</span>';
+		}
+		if ( '' !== $expires ) {
+			/* translators: %s: the expiry date. */
+			echo '<br><small>' . esc_html( sprintf( __( 'until %s', 'qr-document-verification' ), $expires ) ) . '</small>';
+		}
+	}
+
+	/**
+	 * Add "Revoke" and "Reinstate" to the list table's bulk actions.
+	 *
+	 * @param array $actions Existing bulk actions.
+	 * @return array
+	 */
+	public static function register_bulk_actions( $actions ) {
+		$actions['qdv_revoke']    = __( 'Revoke', 'qr-document-verification' );
+		$actions['qdv_reinstate'] = __( 'Reinstate', 'qr-document-verification' );
+		return $actions;
+	}
+
+	/**
+	 * Apply a revoke / reinstate bulk action. WordPress core has already checked
+	 * the list table nonce before this filter runs.
+	 *
+	 * @param string $redirect Redirect URL after the action.
+	 * @param string $action   Selected bulk action.
+	 * @param int[]  $post_ids Selected entries.
+	 * @return string
+	 */
+	public static function handle_bulk_actions( $redirect, $action, $post_ids ) {
+		if ( 'qdv_revoke' !== $action && 'qdv_reinstate' !== $action ) {
+			return $redirect;
+		}
+		$done = 0;
+		foreach ( (array) $post_ids as $post_id ) {
+			$post_id = (int) $post_id;
+			if ( QDV_POST_TYPE !== get_post_type( $post_id ) || ! current_user_can( 'edit_post', $post_id ) ) {
+				continue;
+			}
+			qdv_set_revoked( $post_id, 'qdv_revoke' === $action );
+			++$done;
+		}
+		if ( 'qdv_revoke' === $action ) {
+			/* translators: %d: number of entries. */
+			$msg = sprintf( _n( '%d entry revoked.', '%d entries revoked.', $done, 'qr-document-verification' ), $done );
+		} else {
+			/* translators: %d: number of entries. */
+			$msg = sprintf( _n( '%d entry reinstated.', '%d entries reinstated.', $done, 'qr-document-verification' ), $done );
+		}
+		set_transient(
+			'qdv_notice_' . get_current_user_id(),
+			array(
+				'type' => 'info',
+				'msg'  => $msg,
+			),
+			60
+		);
+		return $redirect;
 	}
 
 	/* ----------------------------------------------------------------------

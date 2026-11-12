@@ -3,3 +3,8 @@
 .qdv-download{margin-top:6px}
 .column-qdv_qr{width:130px}
 .column-qdv_pdf{width:90px}
+.column-qdv_status{width:110px}
+.qdv-st{font-weight:600}
+.qdv-st-valid{color:#1a7f43}
+.qdv-st-expired{color:#b26a00}
+.qdv-st-revoked{color:#c0392b}

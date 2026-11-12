@@ -103,6 +103,15 @@ class QDV_Frontend {
 			nocache_headers();
 			exit;
 		}
+		// Revoked (and, if configured, expired) documents are withheld.
+		$state = qdv_entry_status( $post_id );
+		$o     = qdv_get_options();
+		if ( ! QDV_Status::pdf_allowed( $state['status'], ! empty( $o['hide_expired_pdf'] ) ) ) {
+			status_header( QDV_Status::withheld_http_code( $state['status'] ) );
+			nocache_headers();
+			header( 'X-Robots-Tag: noindex, nofollow', true );
+			exit;
+		}
 		self::stream_pdf( $post_id );
 	}
 
@@ -174,21 +183,37 @@ class QDV_Frontend {
 
 	private static function viewer_card( $post_id, $token ) {
 		$o       = qdv_get_options();
+		$state   = qdv_entry_status( $post_id );
+		$expires = qdv_format_date( $state['expires'] );
 		$file    = get_post_meta( $post_id, '_qdv_pdf_file', true );
 		$pdf_url = qdv_verify_url( $token, true );
 		$name    = get_the_title( $post_id );
 		$idn     = get_post_meta( $post_id, '_qdv_id_number', true );
 
 		// Info card: customizable header band + optional Name / ID fields.
-		echo '<div class="qdv-card">';
-		echo '<div class="qdv-band">';
+		echo '<div class="qdv-card qdv-is-' . esc_attr( $state['status'] ) . '">';
+		if ( QDV_Status::REVOKED === $state['status'] ) {
+			echo '<div class="qdv-band qdv-band-bad">';
+		} elseif ( QDV_Status::EXPIRED === $state['status'] ) {
+			echo '<div class="qdv-band qdv-band-warn">';
+		} else {
+			echo '<div class="qdv-band">';
+		}
 		echo '<div class="qdv-brand"><span class="qdv-shield" aria-hidden="true">&#128737;</span><span>' . esc_html( $o['header_title'] ) . '</span></div>';
-		if ( ! empty( $o['show_badge'] ) ) {
+		// The "Verified" badge can be hidden, but a revoked / expired state is always shown.
+		if ( QDV_Status::REVOKED === $state['status'] ) {
+			echo '<div class="qdv-status qdv-status-bad"><span class="qdv-check" aria-hidden="true">&#10007;</span>' . esc_html( $o['revoked_text'] ) . '</div>';
+		} elseif ( QDV_Status::EXPIRED === $state['status'] ) {
+			echo '<div class="qdv-status qdv-status-warn"><span class="qdv-check" aria-hidden="true">!</span>' . esc_html( $o['expired_text'] ) . '</div>';
+		} elseif ( ! empty( $o['show_badge'] ) ) {
 			echo '<div class="qdv-status"><span class="qdv-check" aria-hidden="true">&#10003;</span>' . esc_html( $o['badge_text'] ) . '</div>';
 		}
 		echo '</div>'; // band
 
-		if ( ( ! empty( $o['show_name'] ) && $name ) || ( ! empty( $o['show_id'] ) && $idn ) ) {
+		self::status_notice( $state );
+
+		$show_expiry = ! empty( $o['show_expiry'] ) && '' !== $expires;
+		if ( ( ! empty( $o['show_name'] ) && $name ) || ( ! empty( $o['show_id'] ) && $idn ) || $show_expiry ) {
 			echo '<div class="qdv-body">';
 			if ( ! empty( $o['show_name'] ) && $name ) {
 				echo '<div class="qdv-field"><span class="qdv-label">' . esc_html( $o['label_name'] ) . '</span><span class="qdv-value">' . esc_html( $name ) . '</span></div>';
@@ -196,12 +221,17 @@ class QDV_Frontend {
 			if ( ! empty( $o['show_id'] ) && $idn ) {
 				echo '<div class="qdv-field"><span class="qdv-label">' . esc_html( $o['label_id'] ) . '</span><span class="qdv-value">' . esc_html( $idn ) . '</span></div>';
 			}
+			if ( $show_expiry ) {
+				echo '<div class="qdv-field"><span class="qdv-label">' . esc_html( $o['label_expiry'] ) . '</span><span class="qdv-value">' . esc_html( $expires ) . '</span></div>';
+			}
 			echo '</div>';
 		}
 		echo '</div>'; // info card
 
 		// Document card.
-		if ( ! empty( $file ) ) {
+		if ( ! QDV_Status::pdf_allowed( $state['status'], ! empty( $o['hide_expired_pdf'] ) ) ) {
+			echo '<div class="qdv-doc qdv-pending"><p>' . esc_html__( 'This document is no longer available.', 'qr-document-verification' ) . '</p></div>';
+		} elseif ( ! empty( $file ) ) {
 			wp_enqueue_script( 'qdv-pdfview', QDV_URL . 'assets/pdf-view.js', array(), QDV_VERSION, true );
 
 			$pdfjs  = QDV_URL . 'assets/pdf.min.js';
@@ -226,6 +256,32 @@ class QDV_Frontend {
 	}
 
 	/**
+	 * Explain a revoked / expired state under the header band.
+	 *
+	 * @param array $state Output of qdv_entry_status().
+	 */
+	private static function status_notice( $state ) {
+		if ( QDV_Status::REVOKED === $state['status'] ) {
+			$when = qdv_format_date( $state['revoked_at'] );
+			if ( $when ) {
+				/* translators: %s: the revocation date. */
+				$msg = sprintf( __( 'This document was revoked on %s and is no longer valid.', 'qr-document-verification' ), $when );
+			} else {
+				$msg = __( 'This document has been revoked and is no longer valid.', 'qr-document-verification' );
+			}
+			echo '<div class="qdv-alert qdv-alert-bad" role="alert"><p>' . esc_html( $msg ) . '</p>';
+			if ( '' !== $state['reason'] ) {
+				echo '<p class="qdv-reason"><strong>' . esc_html__( 'Reason:', 'qr-document-verification' ) . '</strong> ' . esc_html( $state['reason'] ) . '</p>';
+			}
+			echo '</div>';
+		} elseif ( QDV_Status::EXPIRED === $state['status'] ) {
+			/* translators: %s: the expiry date. */
+			$msg = sprintf( __( 'This document expired on %s. It was issued by this site but is no longer valid.', 'qr-document-verification' ), qdv_format_date( $state['expires'] ) );
+			echo '<div class="qdv-alert qdv-alert-warn" role="alert"><p>' . esc_html( $msg ) . '</p></div>';
+		}
+	}
+
+	/**
 	 * Content styles (scoped to .qdv-*), driven by the customizable colors.
 	 */
 	public static function styles() {
@@ -243,12 +299,20 @@ class QDV_Frontend {
 .qdv-card,.qdv-doc{background:#fff;border:1px solid #e6e9f2;border-radius:16px;box-shadow:0 10px 30px rgba(20,30,60,.08);overflow:hidden;margin-bottom:22px}
 .qdv-band{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;background:linear-gradient(135deg,' . $bg1 . ' 0%,' . $bg2 . ' 100%);color:' . $hc . ';padding:16px 22px}
 .qdv-band-bad{background:linear-gradient(135deg,#7d2424 0%,#661a1a 100%)}
+.qdv-band-warn{background:linear-gradient(135deg,#8a5a00 0%,#6b4500 100%)}
 .qdv-brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;letter-spacing:.2px}
 .qdv-shield{font-size:20px;line-height:1}
 .qdv-status{display:inline-flex;align-items:center;gap:8px;font-weight:800;font-size:14px;background:' . $bbg . ';color:' . $bc . ';border:1px solid rgba(0,0,0,.06);border-radius:999px;padding:7px 15px 7px 8px;box-shadow:0 3px 10px rgba(0,0,0,.16)}
 .qdv-check{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:' . $bc . ';color:#fff;font-size:12px;font-weight:900;line-height:1}
 .qdv-status-bad{background:#fdecec;color:#c0392b}
 .qdv-status-bad .qdv-check{background:#c0392b}
+.qdv-status-warn{background:#fff4e0;color:#8a5a00}
+.qdv-status-warn .qdv-check{background:#b26a00}
+.qdv-alert{padding:14px 22px;border-bottom:1px solid var(--qdv-line);font-size:15px}
+.qdv-alert p{margin:0}
+.qdv-alert .qdv-reason{margin-top:6px}
+.qdv-alert-bad{background:#fdecec;color:#8a1f1f}
+.qdv-alert-warn{background:#fff8eb;color:#6b4500}
 .qdv-body{padding:4px 22px 8px}
 .qdv-field{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:16px 0;border-bottom:1px solid var(--qdv-line)}
 .qdv-field:last-child{border-bottom:0}
