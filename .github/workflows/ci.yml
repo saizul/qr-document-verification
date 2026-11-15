@@ -45,6 +45,7 @@ jobs:
           coverage: none
       - run: php tests/csv-test.php
       - run: php tests/status-test.php
+      - run: php tests/fingerprint-test.php
 
   phpcs:
     name: WordPress Coding Standards (informational)

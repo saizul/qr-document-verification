@@ -25,6 +25,7 @@ require_once QDV_DIR . 'includes/helpers.php';
 require_once QDV_DIR . 'includes/class-cpt.php';
 require_once QDV_DIR . 'includes/class-csv.php';
 require_once QDV_DIR . 'includes/class-status.php';
+require_once QDV_DIR . 'includes/class-fingerprint.php';
 require_once QDV_DIR . 'includes/class-frontend.php';
 require_once QDV_DIR . 'includes/class-admin.php';
 require_once QDV_DIR . 'includes/class-settings.php';
@@ -55,6 +56,9 @@ function qdv_defaults() {
 		'expired_text'     => 'Expired',
 		'revoked_text'     => 'Revoked',
 		'hide_expired_pdf' => 0,
+		// Document fingerprint (SHA-256) and the "check your copy" tool.
+		'show_fingerprint' => 1,
+		'label_hash'       => 'Document fingerprint (SHA-256)',
 	);
 }
 

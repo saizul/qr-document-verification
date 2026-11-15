@@ -137,6 +137,11 @@ class QDV_Frontend {
 		header( 'Content-Length: ' . filesize( $path ) );
 		header( 'X-Content-Type-Options: nosniff' );
 		header( 'X-Robots-Tag: noindex, nofollow', true );
+		// RFC 9530 digest of the file, so scripts can check the download.
+		$hash = qdv_pdf_fingerprint( $post_id );
+		if ( '' !== $hash ) {
+			header( 'Repr-Digest: sha-256=:' . base64_encode( hex2bin( $hash ) ) . ':' ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- RFC 9530 requires base64.
+		}
 
 		if ( ob_get_level() ) {
 			ob_end_clean();
@@ -228,6 +233,10 @@ class QDV_Frontend {
 		}
 		echo '</div>'; // info card
 
+		if ( ! empty( $file ) && ! empty( $o['show_fingerprint'] ) ) {
+			self::fingerprint_card( $post_id, $state, $o );
+		}
+
 		// Document card.
 		if ( ! QDV_Status::pdf_allowed( $state['status'], ! empty( $o['hide_expired_pdf'] ) ) ) {
 			echo '<div class="qdv-doc qdv-pending"><p>' . esc_html__( 'This document is no longer available.', 'qr-document-verification' ) . '</p></div>';
@@ -253,6 +262,50 @@ class QDV_Frontend {
 		} else {
 			echo '<div class="qdv-doc qdv-pending"><p>' . esc_html__( 'The document for this entry has not been uploaded yet.', 'qr-document-verification' ) . '</p></div>';
 		}
+	}
+
+	/**
+	 * Fingerprint card: the PDF's SHA-256 plus a "check your copy" tool.
+	 *
+	 * The visitor's file is hashed in the browser (Web Crypto); it is never
+	 * uploaded. The card is also shown for revoked / expired entries so that a
+	 * copy can still be identified as the withdrawn document.
+	 *
+	 * @param int   $post_id Entry ID.
+	 * @param array $state   Output of qdv_entry_status().
+	 * @param array $o       Plugin options.
+	 */
+	private static function fingerprint_card( $post_id, $state, $o ) {
+		$hash = qdv_pdf_fingerprint( $post_id );
+		if ( '' === $hash ) {
+			return;
+		}
+		wp_enqueue_script( 'qdv-fingerprint', QDV_URL . 'assets/fingerprint.js', array(), QDV_VERSION, true );
+
+		if ( QDV_Status::VALID === $state['status'] ) {
+			$match_text = __( 'Match: your file is identical to the document issued for this entry.', 'qr-document-verification' );
+		} else {
+			$match_text = __( 'Match: your file is the document issued for this entry, but the entry is no longer valid (see above).', 'qr-document-verification' );
+		}
+
+		echo '<div class="qdv-card qdv-fp" id="qdv-fp"'
+			. ' data-hash="' . esc_attr( $hash ) . '"'
+			. ' data-match="' . esc_attr( $match_text ) . '"'
+			. ' data-mismatch="' . esc_attr__( 'No match: this file differs from the issued document. It may have been edited or it is a different document.', 'qr-document-verification' ) . '"'
+			. ' data-working="' . esc_attr__( 'Checking...', 'qr-document-verification' ) . '"'
+			. ' data-unsupported="' . esc_attr__( 'Your browser cannot check files here (a secure HTTPS connection is required). Compare the fingerprint above with the SHA-256 of your file instead.', 'qr-document-verification' ) . '"'
+			. ' data-error="' . esc_attr__( 'The file could not be read.', 'qr-document-verification' ) . '">';
+		echo '<div class="qdv-body">';
+		echo '<div class="qdv-field qdv-field-hash"><span class="qdv-label">' . esc_html( $o['label_hash'] ) . '</span>';
+		echo '<code class="qdv-hash">' . esc_html( QDV_Fingerprint::format( $hash ) ) . '</code></div>';
+		echo '<div class="qdv-check-copy">';
+		echo '<label class="qdv-check-label" for="qdv-fp-file">' . esc_html__( 'Have a copy of this document? Check that it has not been altered:', 'qr-document-verification' ) . '</label>';
+		echo '<input type="file" id="qdv-fp-file" class="qdv-fp-file" accept="application/pdf,.pdf">';
+		echo '<p class="qdv-muted qdv-fp-note">' . esc_html__( 'Your file is checked inside your browser and is not uploaded.', 'qr-document-verification' ) . '</p>';
+		echo '<p class="qdv-fp-result" role="status" aria-live="polite"></p>';
+		echo '</div>';
+		echo '</div>';
+		echo '</div>';
 	}
 
 	/**
@@ -327,6 +380,15 @@ class QDV_Frontend {
 .qdv-open{margin:0;padding:14px;text-align:center;background:#f7f8fc;border-top:1px solid var(--qdv-line)}
 .qdv-open a{color:' . $bg1 . ';text-decoration:none;font-weight:700;font-size:16px}
 .qdv-pending{padding:44px 20px;text-align:center;color:var(--qdv-muted)}
+.qdv-field-hash{flex-wrap:wrap}
+.qdv-hash{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;color:var(--qdv-ink);word-break:break-all;text-align:right;max-width:420px;background:none;padding:0}
+.qdv-check-copy{padding:14px 0 16px;border-top:1px solid var(--qdv-line)}
+.qdv-check-label{display:block;font-weight:600;color:var(--qdv-ink);margin-bottom:8px}
+.qdv-fp-note{font-size:13px;margin-top:6px}
+.qdv-fp-result{margin:10px 0 0;font-weight:700}
+.qdv-fp-result:empty{display:none}
+.qdv-fp-ok{color:#137a3e}
+.qdv-fp-bad{color:#c0392b}
 .qdv-notfound{padding:34px 20px;text-align:center}
 .qdv-nf-title{font-size:18px;font-weight:700;color:var(--qdv-ink);margin:0 0 6px}
 .qdv-muted{color:var(--qdv-muted);margin:0}
@@ -337,6 +399,7 @@ class QDV_Frontend {
 	.qdv-body{padding:2px 16px 6px}
 	.qdv-field{flex-direction:column;align-items:flex-start;gap:5px;padding:13px 0}
 	.qdv-value{text-align:left;font-size:17px}
+	.qdv-hash{text-align:left}
 	.qdv-pdf{min-height:auto;padding:8px}
 	.qdv-frame{height:70vh;min-height:380px}
 }
