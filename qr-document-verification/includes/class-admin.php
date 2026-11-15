@@ -103,6 +103,18 @@ class QDV_Admin {
 					<?php endif; ?>
 				</td>
 			</tr>
+			<?php if ( $file ) : ?>
+				<?php $hash = qdv_pdf_fingerprint( $post->ID ); ?>
+				<?php if ( '' !== $hash ) : ?>
+			<tr>
+				<th><?php esc_html_e( 'Fingerprint (SHA-256)', 'qr-document-verification' ); ?></th>
+				<td>
+					<input type="text" class="large-text code" readonly onclick="this.select()" value="<?php echo esc_attr( $hash ); ?>">
+					<p class="description"><?php esc_html_e( 'Unique checksum of the stored PDF. Anyone holding a copy can compare it on the verification page; any change to the file changes this value.', 'qr-document-verification' ); ?></p>
+				</td>
+			</tr>
+				<?php endif; ?>
+			<?php endif; ?>
 			<?php self::validity_rows( $post ); ?>
 			<?php if ( $token ) :
 				$url = qdv_verify_url( $token );
@@ -256,6 +268,11 @@ class QDV_Admin {
 			wp_delete_file( $moved['file'] );
 			return new WP_Error( 'type', __( 'Only PDF files are allowed.', 'qr-document-verification' ) );
 		}
+		// The extension and MIME type come from the browser; check the content too.
+		if ( ! QDV_Fingerprint::is_pdf_file( $moved['file'] ) ) {
+			wp_delete_file( $moved['file'] );
+			return new WP_Error( 'type', __( 'The file does not contain a PDF document (no PDF header found).', 'qr-document-verification' ) );
+		}
 
 		$token = QDV_CPT::ensure_token( $post_id );
 		$dir   = qdv_protected_dir();
@@ -279,6 +296,7 @@ class QDV_Admin {
 
 		update_post_meta( $post_id, '_qdv_pdf_file', $token . '.pdf' );
 		update_post_meta( $post_id, '_qdv_pdf_original', sanitize_file_name( $file['name'] ) );
+		qdv_pdf_fingerprint( $post_id, true );
 		return true;
 	}
 

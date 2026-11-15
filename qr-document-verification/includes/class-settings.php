@@ -118,6 +118,14 @@ class QDV_Settings {
 						</td>
 					</tr>
 					<tr>
+						<th scope="row"><?php esc_html_e( 'Fingerprint', 'qr-document-verification' ); ?></th>
+						<td>
+							<label><input type="checkbox" name="show_fingerprint" value="1" <?php checked( $o['show_fingerprint'], 1 ); ?>> <?php esc_html_e( 'Show the SHA-256 fingerprint and the "check your copy" tool', 'qr-document-verification' ); ?></label>
+							<br><br><?php esc_html_e( 'Label', 'qr-document-verification' ); ?> <input type="text" name="label_hash" value="<?php echo esc_attr( $o['label_hash'] ); ?>" class="regular-text">
+							<p class="description"><?php esc_html_e( 'Visitors can pick a PDF they received and the page tells them whether it is byte-for-byte the issued document. The file is checked in their browser and never uploaded.', 'qr-document-verification' ); ?></p>
+						</td>
+					</tr>
+					<tr>
 						<th scope="row"><label for="notfound_text"><?php esc_html_e( 'Not-found text', 'qr-document-verification' ); ?></label></th>
 						<td><input type="text" id="notfound_text" name="notfound_text" class="regular-text" value="<?php echo esc_attr( $o['notfound_text'] ); ?>"></td>
 					</tr>
@@ -233,8 +241,10 @@ class QDV_Settings {
 		$o['expired_text']     = sanitize_text_field( wp_unslash( $_POST['expired_text'] ?? '' ) );
 		$o['revoked_text']     = sanitize_text_field( wp_unslash( $_POST['revoked_text'] ?? '' ) );
 		$o['hide_expired_pdf'] = isset( $_POST['hide_expired_pdf'] ) ? 1 : 0;
+		$o['show_fingerprint'] = isset( $_POST['show_fingerprint'] ) ? 1 : 0;
+		$o['label_hash']       = sanitize_text_field( wp_unslash( $_POST['label_hash'] ?? '' ) );
 		// A blank status text would leave a revoked / expired page without a visible state.
-		foreach ( array( 'label_expiry', 'expired_text', 'revoked_text' ) as $key ) {
+		foreach ( array( 'label_expiry', 'expired_text', 'revoked_text', 'label_hash' ) as $key ) {
 			if ( '' === $o[ $key ] ) {
 				$o[ $key ] = $d[ $key ];
 			}

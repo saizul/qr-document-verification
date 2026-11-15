@@ -172,3 +172,56 @@ function qdv_set_revoked( $post_id, $revoked, $reason = null ) {
 	delete_post_meta( $post_id, QDV_Status::META_REVOKED_AT );
 	delete_post_meta( $post_id, QDV_Status::META_REVOKE_REASON );
 }
+
+/**
+ * Absolute path of an entry's stored PDF, or '' when none is attached.
+ *
+ * @param int $post_id Entry ID.
+ */
+function qdv_pdf_path( $post_id ) {
+	$file = get_post_meta( $post_id, '_qdv_pdf_file', true );
+	if ( empty( $file ) ) {
+		return '';
+	}
+	return trailingslashit( qdv_protected_dir() ) . basename( (string) $file );
+}
+
+/**
+ * SHA-256 fingerprint of an entry's stored PDF.
+ *
+ * The digest is cached in post meta together with the file size and mtime and
+ * recomputed only when the file changed, so entries created before this
+ * feature existed get a fingerprint the first time they are viewed.
+ *
+ * @param int  $post_id Entry ID.
+ * @param bool $force   Recompute even if the cached value looks current.
+ * @return string Lower-case hex digest, or '' without a readable PDF.
+ */
+function qdv_pdf_fingerprint( $post_id, $force = false ) {
+	$path = qdv_pdf_path( $post_id );
+	if ( '' === $path || ! is_readable( $path ) ) {
+		return '';
+	}
+
+	clearstatcache( true, $path );
+	$size  = (int) filesize( $path );
+	$mtime = (int) filemtime( $path );
+
+	$cached = array(
+		'sha256' => get_post_meta( $post_id, QDV_Fingerprint::META_SHA256, true ),
+		'size'   => get_post_meta( $post_id, QDV_Fingerprint::META_SIZE, true ),
+		'mtime'  => get_post_meta( $post_id, QDV_Fingerprint::META_MTIME, true ),
+	);
+	if ( ! $force && ! QDV_Fingerprint::needs_refresh( $cached, $size, $mtime ) ) {
+		return QDV_Fingerprint::normalize( $cached['sha256'] );
+	}
+
+	$hash = QDV_Fingerprint::compute( $path );
+	if ( '' === $hash ) {
+		return '';
+	}
+	update_post_meta( $post_id, QDV_Fingerprint::META_SHA256, $hash );
+	update_post_meta( $post_id, QDV_Fingerprint::META_SIZE, $size );
+	update_post_meta( $post_id, QDV_Fingerprint::META_MTIME, $mtime );
+	return $hash;
+}
